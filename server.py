@@ -33,7 +33,7 @@ class Team(IntEnum):
 class Server:
     server: socket.socket
     HOST = '127.0.0.1'
-    PORT = 8001
+    PORT = 8000
     phase: Phase = Phase.DAY
     # Key: Session_id    Value: Socket
     clients_socket: dict
@@ -80,18 +80,22 @@ class Server:
                         self.clients_socket[session].send(f"{self.clients_id[session_id]}: {message}".encode("ascii"))
                 elif command.startswith("select"):
                     player_id = re.match("select (?P<player_id>\d+)", command).groupdict().values()
-                elif command.startswith("offer"):
-                    player_id = re.match("offer (?P<player_id>\d+)", command).groupdict().values()
+                elif command.startswith("offer") and \
+                    self.check_offer_conditions(session_id):
+                    player_id = re.match("offer (?P<player_id>\d+)", command).groupdict().get("player_id")
+                    msg = f"Player {self.clients_id[session_id]} offers to kill player {player_id}"
+                    self.clients_socket[self.roles[Role.GODFATHER]].send(msg.encode("ascii"))
+                    print(msg)
                 elif command.startswith("vote") and \
                     self.check_vote_conditions(session_id):
                     player_id = int(re.match("vote (?P<player_id>\d+)", command).groupdict().get("player_id"))
                     self.votes[player_id] += 1
                     self.voted[session_id] = True
                     threading.Thread(target=self.send_to_all, args=(json.dumps(self.votes),)).start()
+                    print(f"Player {self.clients_id[session_id]} voted to {player_id}")
                 elif command == "next step" and \
                     self.check_next_step_conditions(session_id):
-                    self.phase = Phase((self.phase + 1) % 3)
-                    self.clear_votes()
+                    threading.Thread(target=self.next_phase, args=()).start()
                 elif command == "set roles" and \
                     self.check_set_roles_conditions():
                     self.roles[Role.STORYTELLER] = session_id
@@ -134,6 +138,12 @@ class Server:
             self.clients_socket[player].send(message.encode("ascii"))
 
 
+    def next_phase(self) -> None:
+        self.phase = Phase((self.phase + 1) % 3)
+        threading.Thread(target=self.send_to_all, args=(f"Going to next phase: {self.phase}",)).start()
+        self.clear_votes()
+
+
     def clear_votes(self) -> None:
         for player_id in self.votes:
             self.votes[player_id] = 0
@@ -156,6 +166,10 @@ class Server:
 
     def check_say_conditions(self) -> bool:
         return self.phase == Phase.DAY
+
+    def check_offer_conditions(self, session_id: str) -> bool:
+        return self.phase == Phase.NIGHT and \
+            self.clients_role.get(session_id) == Role.MAFIA
 
 
 if __name__ == "__main__":
