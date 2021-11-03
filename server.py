@@ -85,6 +85,7 @@ class Server:
                     player_id = re.match("offer (?P<player_id>\d+)", command).groupdict().get("player_id")
                     msg = f"Player {self.clients_id[session_id]} offers to kill player {player_id}"
                     self.clients_socket[self.roles[Role.GODFATHER]].send(msg.encode("ascii"))
+                    self.clients_socket[self.roles[Role.STORYTELLER]].send(msg.encode("ascii"))
                     print(msg)
                 elif command.startswith("vote") and \
                     self.check_vote_conditions(session_id):
@@ -106,6 +107,7 @@ class Server:
                         for session in self.clients_socket:
                             if self.clients_role.get(session) != None: continue
                             self.clients_role[session] = role
+                            self.roles[role] = session
                             self.clients_socket[session].send(str(int(role)).encode("ascii"))
                             break
                         
@@ -140,7 +142,7 @@ class Server:
 
     def next_phase(self) -> None:
         self.phase = Phase((self.phase + 1) % 3)
-        threading.Thread(target=self.send_to_all, args=(f"Going to next phase: {self.phase}",)).start()
+        threading.Thread(target=self.send_to_all, args=(f"Going to next phase: {str(self.phase)}",)).start()
         self.clear_votes()
 
 
