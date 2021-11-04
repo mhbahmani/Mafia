@@ -252,7 +252,7 @@ class Server:
                     self.kill_player(
                         killed_session_id=self.ids[self.killed_player],
                         killed_player_id=self.killed_player,
-                        message=f"Player {self.killed_player} from {self.get_team(self.killed_player)} team got killed last night")
+                        message=f"Player {self.killed_player} from {str(self.get_team(self.killed_player))} team got killed last night")
 
         logging.info(f"Going to Next Phase: {str(self.phase)}")
 
@@ -318,11 +318,10 @@ class Server:
         self.killed_roles.append(self.clients_role[killed_session_id])
         self.killed_ids[killed_player_id] = killed_session_id
         self.votes.pop(killed_player_id)
+        self.clients_socket.pop(killed_session_id).send("*** YOU GOT KILLED :(\nSit tight and watch your teamates work\n-----".encode("ascii"))
         self.clients_role.pop(killed_session_id)
         self.clients_id.pop(killed_session_id)
-        s = self.clients_socket.pop(killed_session_id)
         self.make_send_message_by_role_thread(message=message, souls_message=souls_message)
-        s.send("*** You got killed :(\nSit tight and watch you teamates work\n-----".encode("ascii"))
         self.make_check_winner_thread()
 
 
