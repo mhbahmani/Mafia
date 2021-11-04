@@ -280,13 +280,14 @@ class Server:
 
 
     def kill_player(self, killed_session_id: str, killed_player_id: int, message: str) -> None:
-        self.make_send_message_by_role_thread(message=message)
         self.killed_sockets[killed_session_id] = self.clients_socket[killed_session_id]
         self.killed_roles.append(self.clients_role[killed_session_id])
         self.killed_ids[killed_player_id] = killed_session_id
+        self.votes.pop(killed_player_id)
         self.clients_socket.pop(killed_session_id)
         self.clients_role.pop(killed_session_id)
         self.clients_id.pop(killed_session_id)
+        self.make_send_message_by_role_thread(message=message)
 
 
     def get_team(self, role: Role=None, player_id: int= None) -> Team:
