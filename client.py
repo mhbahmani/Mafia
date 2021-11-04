@@ -33,20 +33,18 @@ class Socket:
     SERVER_PORT = 8000
     SERVER_HOST = '127.0.0.1'
     client: socket.socket
-    lock: threading.Lock
     session_id: str
 
     def __init__(self) -> None:
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.connect((Socket.SERVER_HOST, Socket.SERVER_PORT))
         self.session_id = self.client.recv(1024).decode('ascii')
-        self.lock = threading.Lock()
-        # self.lock.acquire()
 
 
 class Player:
     team: Team
     role: Role
+    end = False
 
     def __init__(self) -> None:
         pass
@@ -60,11 +58,12 @@ class Client(Player, Socket):
 
         print(f"session_id: {self.session_id}")
 
-        read_thread = threading.Thread(target=self.read, args=())
-        read_thread.start()
-
         write_thread = threading.Thread(target=self.write, args=())
         write_thread.start()
+
+        read_thread = threading.Thread(target=self.read, args=())
+        read_thread.start()
+        read_thread.join()
 
 
     def read(self) -> None:
@@ -72,16 +71,18 @@ class Client(Player, Socket):
         self.role = Role(role)
         print(f"Player Role: {self.role}")
 
-        while True:
+        while not self.end:
             message = self.client.recv(BUFF_SIZE).decode('ascii')
             print(message)
-
+            if message == "You Won!" or message == "You Lost!":
+                self.end = True
 
     def write(self) -> None:
-        while True:
+        while not self.end:
             command = input()
             self.client.send(f"{self.session_id}::{command}".encode("ascii"))
 
 
 if __name__ == "__main__":
     client = Client()
+    client.client.close()

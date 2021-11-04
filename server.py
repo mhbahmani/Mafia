@@ -4,6 +4,7 @@ from hashlib import sha256
 import socket, threading 
 import logging
 import random
+import time
 import json
 import re
 
@@ -43,6 +44,7 @@ class Server:
     PORT = 8000
     check_winner_lock = threading.Lock()
     winner: Team = None
+    end = False
     phase: Phase = Phase.DAY
     saved_player = 0
     killed_player = 0
@@ -80,13 +82,11 @@ class Server:
         self.server.listen(1)
         logging.info(f"Server is listening on {Server.HOST}:{Server.PORT}")
 
-        server_thread = threading.Thread(target=self.server_listener, args=())
-        server_thread.start()
-
+        self.server_listener()
 
 
     def handle_client(self, client: socket.socket, session_id: str):
-        while True:
+        while not self.end:
             try:
                 message = client.recv(BUFF_SIZE).decode("ascii")
                 regex_result = re.match("(?P<session_id>[\w|=]+)::(?P<command>.+)", message)
@@ -131,7 +131,6 @@ class Server:
                 elif command.startswith("vote") and \
                     self.check_vote_conditions(session_id):
                     player_id = int(re.match("vote (?P<player_id>\d+)", command).groupdict().get("player_id"))
-                    logging.info(f"Player {self.clients_id[session_id]} vote to {player_id}")
                     if player_id in self.killed_ids: 
                         logging.info(f"Voted player by {self.clients_id[session_id]} is dead already")
                         client.send(f"Player {player_id} is dead idiot :/")
@@ -168,26 +167,29 @@ class Server:
                             break
                     from collections import OrderedDict
                     self.votes = OrderedDict(sorted(self.votes.items()))
-                        
-                        
-            except ValueError:
+
+            except AttributeError:
+                pass
+            except:
                 logging.error("Something bad happend")
                 client.close()
-                self.clients_socket.pop(session_id)
-                self.clients_role.pop(session_id)
-                self.clients_id.pop(session_id)
                 break
 
 
     def server_listener(self):
-        while True:
-            client, address = self.server.accept()
-            session_id = sha256(bytes(f"client{address}", "utf-8")).hexdigest()[-20:]
-            logging.info(f"New player accepted with id {session_id}")
-            client.send(session_id.encode("ascii"))
-            self.clients_socket[session_id] = client
-            thread = threading.Thread(target=self.handle_client, args=(client, session_id,))
-            thread.start()
+        while not self.end:
+            try:
+                if self.end: break
+                client, address = self.server.accept()
+                session_id = sha256(bytes(f"client{address}", "utf-8")).hexdigest()[-20:]
+                logging.info(f"New player accepted with id {session_id}")
+                client.send(session_id.encode("ascii"))
+                self.clients_socket[session_id] = client
+                thread = threading.Thread(target=self.handle_client, args=(client, session_id,))
+                thread.start()
+            except:
+                if self.end: break
+                logging.error("Connection Failed")
 
 
     def handle_votes(self):
@@ -204,7 +206,7 @@ class Server:
 
     def send_message_by_role(self, message: str, recipients_role: list):
         for role in recipients_role:
-            self.clients_socket[self.roles[role]].send(message.encode("ascii"))
+            self.clients_socket.get(self.roles[role], self.killed_sockets.get(self.roles[role])).send(message.encode("ascii"))
 
 
     def send_to_all(self, message: str) -> None:
@@ -217,11 +219,14 @@ class Server:
         self.phase = Phase((self.phase + 1) % 3)
 
         if last_phase == Phase.VOTE:
-            if len(self.voted) == len(self.clients_socket) - 1:
-                logging.info("Voting ended")
-                handle_votes_thread = threading.Thread(target=self.handle_votes, args=())
-                handle_votes_thread.start()
-                handle_votes_thread.join()
+            logging.info("Voting ended")
+            handle_votes_thread = threading.Thread(target=self.handle_votes, args=())
+            handle_votes_thread.start()
+            handle_votes_thread.join()
+            
+            if self.winner:
+                self.end_game()
+                return
         elif last_phase == Phase.NIGHT:
             # Handle doctor save himeslef
             if self.saved_player == self.clients_id.get(self.roles[Role.DOCTOR], 0):
@@ -239,9 +244,6 @@ class Server:
                     killed_player_id=self.killed_player,
                     message=f"Player {self.killed_player} got killed last night")
 
-            if self.winner:
-                self.end_game()
-
         logging.info(f"Going to Next Phase: {str(self.phase)}")
 
         msg = ""
@@ -249,7 +251,11 @@ class Server:
         elif self.phase == Phase.DAY: msg = "* Time to wake! *"
         elif self.phase == Phase.VOTE: msg = "* Mizan Ray Mellat Ast! *"
         self.make_send_message_by_role_thread(message=f"Going to next phase: {str(self.phase)}\n{msg}")
-        
+
+        if self.winner:
+            self.end_game()
+            return
+                                
         ## clear votes
         for player_id in self.votes:
             self.votes[player_id] = 0
@@ -330,9 +336,9 @@ class Server:
         self.make_send_message_by_role_thread(message="You Won!", team=self.winner)
         self.make_send_message_by_role_thread(message="You Lost!", team=Team(-self.winner))
 
-        for s in self.clients_socket.values(): s.close()
-        for s in self.killed_sockets.values(): s.close()
+        time.sleep(1)
         self.server.close()
+        self.end = True
 
 
     def make_send_message_by_role_thread(self, message: str, recipients_role: list = list(Role), exclude_roles: list = [], team: Team = None):
@@ -346,14 +352,15 @@ class Server:
                     message,
                     TeamPlayers[team]
                 )
-            )
-        threading.Thread(
-            target=self.send_message_by_role,
-            args=(
-                message,
-                list(set(recipients_role) - set(exclude_roles) - set(self.killed_roles)),
-            )
-        ).start()
+            ).start()
+        else:
+            threading.Thread(
+                target=self.send_message_by_role,
+                args=(
+                    message,
+                    list(set(recipients_role) - set(exclude_roles) - set(self.killed_roles)),
+                )
+            ).start()
 
 
     def make_check_winner_thread(self):
@@ -374,3 +381,4 @@ if __name__ == "__main__":
             'ERROR': logging.ERROR,
             }['INFO'])
     server = Server()
+    logging.info("Shutting Down ...")
