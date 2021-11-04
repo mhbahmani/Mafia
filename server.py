@@ -1,7 +1,7 @@
-from enum import IntEnum
+from enum import Enum, IntEnum
 from hashlib import sha256
 
-import socket, threading
+import socket, threading 
 import logging
 import random
 import json
@@ -32,10 +32,17 @@ class Team(IntEnum):
     CITIZEN = -1
 
 
+TeamPlayers = {
+    Team.MAFIA: [Role.MAFIA, Role.GODFATHER],
+    Team.CITIZEN: [Role.CITIZEN, Role.DOCTOR, Role.DETECTIVE]
+}
+
 class Server:
     server: socket.socket
     HOST = '127.0.0.1'
     PORT = 8000
+    check_winner_lock = threading.Lock()
+    winner: Team = None
     phase: Phase = Phase.DAY
     saved_player = 0
     killed_player = 0
@@ -75,6 +82,7 @@ class Server:
 
         server_thread = threading.Thread(target=self.server_listener, args=())
         server_thread.start()
+
 
 
     def handle_client(self, client: socket.socket, session_id: str):
@@ -133,9 +141,6 @@ class Server:
                     msg = f"Player {self.clients_id[session_id]} voted to {player_id}"
                     self.make_send_message_by_role_thread(f"{msg} --> {json.dumps(self.votes)}")
                     logging.info(f"Player {self.clients_id[session_id]} voted to {player_id}")
-                    if len(self.voted) == len(self.clients_socket) - 1:
-                        logging.info("Voting ended")
-                        threading.Thread(target=self.handle_votes, args=()).start()
                 elif command == "next step" and \
                     self.check_next_step_conditions(session_id):
                     threading.Thread(target=self.next_phase, args=()).start()
@@ -197,19 +202,6 @@ class Server:
                 message=msg)
 
 
-    def make_send_message_by_role_thread(self, message: str, recipients_role: list = list(Role), exclude_roles: list = []):
-        """
-            If recipients_role not set, send to all 
-        """
-        threading.Thread(
-            target=self.send_message_by_role,
-            args=(
-                message,
-                list(set(recipients_role) - set(exclude_roles) - set(self.killed_roles)),
-            )
-        ).start()
-
-
     def send_message_by_role(self, message: str, recipients_role: list):
         for role in recipients_role:
             self.clients_socket[self.roles[role]].send(message.encode("ascii"))
@@ -223,13 +215,14 @@ class Server:
     def next_phase(self) -> None:
         last_phase = self.phase
         self.phase = Phase((self.phase + 1) % 3)
-        msg = ""
-        if self.phase == Phase.NIGHT: msg = "* Sleeeeeeep! *"
-        elif self.phase == Phase.DAY: msg = "* Time to wake! *"
-        elif self.phase == Phase.VOTE: msg = "* Mizan Ray Mellat Ast! *"
-        self.make_send_message_by_role_thread(message=f"Going to next phase: {str(self.phase)}\n{msg}")
-        logging.info(f"Going to Next Phase: {str(self.phase)}")
-        if last_phase == Phase.NIGHT:
+
+        if last_phase == Phase.VOTE:
+            if len(self.voted) == len(self.clients_socket) - 1:
+                logging.info("Voting ended")
+                handle_votes_thread = threading.Thread(target=self.handle_votes, args=())
+                handle_votes_thread.start()
+                handle_votes_thread.join()
+        elif last_phase == Phase.NIGHT:
             # Handle doctor save himeslef
             if self.saved_player == self.clients_id.get(self.roles[Role.DOCTOR], 0):
                 if self.doctor_saved_himself: self.saved_player = 0
@@ -246,6 +239,17 @@ class Server:
                     killed_player_id=self.killed_player,
                     message=f"Player {self.killed_player} got killed last night")
 
+            if self.winner:
+                self.end_game()
+
+        logging.info(f"Going to Next Phase: {str(self.phase)}")
+
+        msg = ""
+        if self.phase == Phase.NIGHT: msg = "* Sleeeeeeep! *"
+        elif self.phase == Phase.DAY: msg = "* Time to wake! *"
+        elif self.phase == Phase.VOTE: msg = "* Mizan Ray Mellat Ast! *"
+        self.make_send_message_by_role_thread(message=f"Going to next phase: {str(self.phase)}\n{msg}")
+        
         ## clear votes
         for player_id in self.votes:
             self.votes[player_id] = 0
@@ -256,6 +260,18 @@ class Server:
         self.saved_player = 0
         self.killed_player = 0
 
+
+    def check_winner(self):
+        # if self.check_winner_lock.locked():
+        #     pass
+        teams_players_number = self.count_each_team_players()
+        if teams_players_number[Team.MAFIA] == teams_players_number[Team.CITIZEN]:
+            self.winner = Team.MAFIA
+        elif teams_players_number[Team.MAFIA] == 0: self.winner = Team.CITIZEN
+        if not self.winner: return
+        # self.check_winner_lock.acquire()
+    
+        logging.info(f"Team {str(self.winner)} won")
 
 
     def check_vote_conditions(self, session_id: str) -> bool:
@@ -288,12 +304,65 @@ class Server:
         self.clients_role.pop(killed_session_id)
         self.clients_id.pop(killed_session_id)
         self.make_send_message_by_role_thread(message=message)
+        self.make_check_winner_thread()
+
 
 
     def get_team(self, role: Role=None, player_id: int= None) -> Team:
         if player_id in self.killed_ids: return Team.DEAD
         if player_id and not role: role = self.clients_role[self.ids[player_id]]
         return Team.MAFIA if role == Role.MAFIA else Team.CITIZEN
+
+
+    def count_each_team_players(self) -> dict:
+        teams = {
+            Team.MAFIA: 0,
+            Team.CITIZEN: 0
+        }
+        for player_role in self.clients_role.values():
+            if player_role == Role.STORYTELLER: continue
+            elif player_role in [Role.MAFIA, Role.GODFATHER]: teams[Team.MAFIA] += 1
+            else: teams[Team.CITIZEN] += 1
+        return teams
+
+    
+    def end_game(self) -> None:
+        self.make_send_message_by_role_thread(message="You Won!", team=self.winner)
+        self.make_send_message_by_role_thread(message="You Lost!", team=Team(-self.winner))
+
+        for s in self.clients_socket.values(): s.close()
+        for s in self.killed_sockets.values(): s.close()
+        self.server.close()
+
+
+    def make_send_message_by_role_thread(self, message: str, recipients_role: list = list(Role), exclude_roles: list = [], team: Team = None):
+        """
+            If recipients_role not set, send to all 
+        """
+        if team:
+            threading.Thread(
+                target=self.send_message_by_role,
+                args=(
+                    message,
+                    TeamPlayers[team]
+                )
+            )
+        threading.Thread(
+            target=self.send_message_by_role,
+            args=(
+                message,
+                list(set(recipients_role) - set(exclude_roles) - set(self.killed_roles)),
+            )
+        ).start()
+
+
+    def make_check_winner_thread(self):
+        check_winner_thrad = threading.Thread(
+            target=self.check_winner,
+            args=()
+        )
+        check_winner_thrad.start()
+        check_winner_thrad.join()
 
 
 if __name__ == "__main__":
