@@ -8,6 +8,7 @@ import time
 import json
 import sys
 import re
+from typing import SupportsRound
 
 
 BUFF_SIZE = 1024
@@ -42,7 +43,7 @@ TeamPlayers = {
 class Server:
     server: socket.socket
     HOST = '127.0.0.1'
-    PORT = 8001
+    PORT = 8000
     check_winner_lock = threading.Lock()
     winner: Team = None
     end = False
@@ -138,8 +139,10 @@ class Server:
 
     
     def handle_select_command(self, session_id: str, player_id: int) -> None:
+        msg = s_msg = None
         if self.clients_role[session_id] == Role.DOCTOR:
-            logging.info(f"Doctor wants to save {player_id}")
+            s_msg = msg = f"Player {self.clients_id[session_id]} (Doctor) wants to save {player_id}"
+            logging.info(msg)
             self.selected[Role.DOCTOR] = True
             self.saved_player = player_id
             logging.info(f"Saved player save. Player id: {player_id}")
@@ -148,17 +151,27 @@ class Server:
             self.selected[Role.DETECTIVE] = True
             logging.info(f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team")
             target_team = self.get_team(player_id=player_id)
-            s_msg = f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team\nInquiry Result: Player {player_id} role is {str(target_team)}"
+            msg = f"Inquiry Result: Player {player_id} role is {str(target_team)}"
+            s_msg = f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team which is {str(self.clients_role[self.roles[player_id]])}\nInquiry Result: Player {player_id} role is {str(target_team)}"
             self.make_send_message_by_role_thread(
-                message=f"Inquiry Result: Player {player_id} role is {str(target_team)}",
+                message=msg,
                 souls_message=s_msg,
                 recipients_role=[Role.STORYTELLER, Role.DETECTIVE]
             )
             logging.info(f"Inquiry result sent: {str(target_team)}")
+            return
         elif self.clients_role[session_id] == Role.GODFATHER:
             self.selected[Role.GODFATHER] = True
-            logging.info(f"Player {self.clients_id[session_id]} (Godfather) wants to kill player {player_id}")
+            s_msg = msg = f"Player {self.clients_id[session_id]} (Godfather) wants to kill player {player_id}"
+            logging.info(msg)
             self.killed_player = player_id
+        else:
+            msg = f"Player {self.clients_id[session_id]} ({str(self.clients_role[session_id])}) is using this command w/o permission"
+        self.make_send_message_by_role_thread(
+            message=msg,
+            souls_message=s_msg,
+            recipients_role=[Role.STORYTELLER]
+        )
 
     
     def handle_vote_command(self, session_id: str, player_id: int, client: socket.socket) -> None:
