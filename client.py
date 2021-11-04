@@ -1,5 +1,6 @@
 from enum import IntEnum
 import socket, threading
+import sys
 
 
 BUFF_SIZE = 1024
@@ -74,15 +75,21 @@ class Client(Player, Socket):
         while not self.end:
             message = self.client.recv(BUFF_SIZE).decode('ascii')
             print(message)
-            if message == "You Won!" or message == "You Lost!":
+            if message == "You Won!" or message == "You Lost!" or message == "End":
                 self.end = True
+                print("Press enter to end")
+
 
     def write(self) -> None:
         while not self.end:
-            command = input()
-            self.client.send(f"{self.session_id}::{command}".encode("ascii"))
+            try:
+                command = input()
+                self.client.send(f"{self.session_id}::{command}".encode("ascii"))
+            except:
+                pass
 
 
 if __name__ == "__main__":
     client = Client()
     client.client.close()
+    sys.exit()

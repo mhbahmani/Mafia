@@ -6,6 +6,7 @@ import logging
 import random
 import time
 import json
+import sys
 import re
 
 
@@ -81,8 +82,6 @@ class Server:
         self.server.bind((Server.HOST, Server.PORT))
         self.server.listen(1)
         logging.info(f"Server is listening on {Server.HOST}:{Server.PORT}")
-
-        self.server_listener()
 
 
     def handle_client(self, client: socket.socket, session_id: str):
@@ -335,6 +334,7 @@ class Server:
     def end_game(self) -> None:
         self.make_send_message_by_role_thread(message="You Won!", team=self.winner)
         self.make_send_message_by_role_thread(message="You Lost!", team=Team(-self.winner))
+        self.make_send_message_by_role_thread(message="End", recipients_role=[Role.STORYTELLER])
 
         time.sleep(1)
         self.server.close()
@@ -381,4 +381,6 @@ if __name__ == "__main__":
             'ERROR': logging.ERROR,
             }['INFO'])
     server = Server()
-    logging.info("Shutting Down ...")
+    server.server_listener()
+    server.server.close()
+    sys.exit()
