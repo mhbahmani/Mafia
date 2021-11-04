@@ -43,7 +43,7 @@ TeamPlayers = {
 class Server:
     server: socket.socket
     HOST = '127.0.0.1'
-    PORT = 8000
+    PORT = 8001
     check_winner_lock = threading.Lock()
     winner: Team = None
     end = False
@@ -116,7 +116,7 @@ class Server:
 
             except AttributeError:
                 pass
-            except:
+            except ValueError:
                 logging.error("Something bad happend")
                 client.close()
                 break
@@ -139,6 +139,7 @@ class Server:
 
     
     def handle_select_command(self, session_id: str, player_id: int) -> None:
+        if session_id in self.killed_sockets: return
         msg = s_msg = None
         recipients_role = [Role.STORYTELLER]
         if self.clients_role[session_id] == Role.DOCTOR:
@@ -156,7 +157,6 @@ class Server:
             s_msg = f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team which is {str(self.clients_role[self.roles[player_id]])}\nInquiry Result: Player {player_id} role is {str(target_team)}"
             recipients_role = [Role.STORYTELLER, Role.DETECTIVE]
             logging.info(f"Inquiry result sent: {str(target_team)}")
-            return
         elif self.clients_role[session_id] == Role.GODFATHER:
             self.selected[Role.GODFATHER] = True
             s_msg = msg = f"Player {self.clients_id[session_id]} (Godfather) wants to kill player {player_id}"
