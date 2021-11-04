@@ -140,6 +140,7 @@ class Server:
     
     def handle_select_command(self, session_id: str, player_id: int) -> None:
         msg = s_msg = None
+        recipients_role = [Role.STORYTELLER]
         if self.clients_role[session_id] == Role.DOCTOR:
             s_msg = msg = f"Player {self.clients_id[session_id]} (Doctor) wants to save {player_id}"
             logging.info(msg)
@@ -153,11 +154,7 @@ class Server:
             target_team = self.get_team(player_id=player_id)
             msg = f"Inquiry Result: Player {player_id} role is {str(target_team)}"
             s_msg = f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team which is {str(self.clients_role[self.roles[player_id]])}\nInquiry Result: Player {player_id} role is {str(target_team)}"
-            self.make_send_message_by_role_thread(
-                message=msg,
-                souls_message=s_msg,
-                recipients_role=[Role.STORYTELLER, Role.DETECTIVE]
-            )
+            recipients_role = [Role.STORYTELLER, Role.DETECTIVE]
             logging.info(f"Inquiry result sent: {str(target_team)}")
             return
         elif self.clients_role[session_id] == Role.GODFATHER:
@@ -170,7 +167,7 @@ class Server:
         self.make_send_message_by_role_thread(
             message=msg,
             souls_message=s_msg,
-            recipients_role=[Role.STORYTELLER]
+            recipients_role=recipients_role
         )
 
     
