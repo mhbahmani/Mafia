@@ -143,10 +143,10 @@ class Server:
                         
             except:
                 logging.error("Something bad happend")
-                # client.close()
-                # self.clients_socket.pop(session_id)
-                # self.clients_role.pop(session_id)
-                # self.clients_id.pop(session_id)
+                client.close()
+                self.clients_socket.pop(session_id)
+                self.clients_role.pop(session_id)
+                self.clients_id.pop(session_id)
                 break
 
 
@@ -204,9 +204,9 @@ class Server:
 
         # TODO:
         # Handle doctor save himeslef
-        if player_id == self.clients_id[session_id]:
-            if self.doctor_saved_himself: continue
-            else: self.doctor_saved_himself = True
+        # if player_id == self.clients_id[session_id]:
+        #     if self.doctor_saved_himself: continue
+        #     else: self.doctor_saved_himself = True
 
 
     def check_vote_conditions(self, session_id: str) -> bool:
