@@ -226,9 +226,9 @@ class Server:
             self.clients_role.get(session_id) == Role.MAFIA
 
 
-    def get_team(self, role: Role=None, player_id: str= None) -> Team:
+    def get_team(self, role: Role=None, player_id: int= None) -> Team:
         if player_id and not role: role = self.clients_role[self.ids[player_id]]
-        return Team.MAFIA if role in [Role.MAFIA, Role.GODFHATHER] else Team.CITIZEN
+        return Team.MAFIA if role in [Role.MAFIA, Role.GODFATHER] else Team.CITIZEN
 
 
 if __name__ == "__main__":
