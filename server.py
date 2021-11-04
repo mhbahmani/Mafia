@@ -76,9 +76,11 @@ class Server:
                 if command.startswith("say") and \
                     self.check_say_conditions():
                     message = re.match("say (?P<message>.+)", command).groupdict().get("message")
-                    for session in self.clients_socket:
-                        if session == session_id: continue
-                        self.clients_socket[session].send(f"{self.clients_id[session_id]}: {message}".encode("ascii"))
+                    msg = f"{self.clients_id[session_id]}: {message}"
+                    self.make_send_message_by_role_thread(
+                        message=f"{self.clients_id[session_id]}: {message}",
+                        exclude_roles=[self.clients_role[session_id]])
+                    logging.info(msg)
                 elif command.startswith("select"):
                     player_id = re.match("select (?P<player_id>\d+)", command).groupdict().values()
                 elif command.startswith("offer") and \
@@ -114,7 +116,7 @@ class Server:
                             break
                         
                         
-            except ValueError:
+            except:
                 logging.error("Something bad happend")
                 # client.close()
                 # self.clients_socket.pop(session_id)
@@ -137,11 +139,17 @@ class Server:
             thread.start()
 
 
-    def make_send_message_by_role_thread(self, message: str, recipients_role: list = list(Role)):
+    def make_send_message_by_role_thread(self, message: str, recipients_role: list = list(Role), exclude_roles: list = []):
         """
             If recipients_role not set, send to all 
         """
-        threading.Thread(target=self.send_message_by_role, args=(message, recipients_role,)).start()
+        threading.Thread(
+            target=self.send_message_by_role,
+            args=(
+                message,
+                list(set(recipients_role) - set(exclude_roles)),
+            )
+        ).start()
 
 
     def send_message_by_role(self, message: str, recipients_role: list):
