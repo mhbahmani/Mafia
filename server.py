@@ -424,5 +424,6 @@ if __name__ == "__main__":
             }['INFO'])
     server = Server()
     server.server_listener()
+    logging.info("Shutting server down ...")
     server.server.close()
     sys.exit()
