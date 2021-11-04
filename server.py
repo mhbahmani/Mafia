@@ -20,7 +20,7 @@ class Role(IntEnum):
     # CITIZEN = 0
     DOCTOR = 1
     DETECTIVE = 2
-    # MAFIA = 3
+    MAFIA = 3
     GODFATHER = 4
     STORYTELLER = 5
 
@@ -228,7 +228,7 @@ class Server:
 
     def get_team(self, role: Role=None, player_id: int= None) -> Team:
         if player_id and not role: role = self.clients_role[self.ids[player_id]]
-        return Team.MAFIA if role in [Role.MAFIA, Role.GODFATHER] else Team.CITIZEN
+        return Team.MAFIA if role == Role.MAFIA else Team.CITIZEN
 
 
 if __name__ == "__main__":
