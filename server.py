@@ -97,7 +97,6 @@ class Server:
                     player_id = int(re.match("select (?P<player_id>\d+)", command).groupdict().get("player_id"))
                     if self.clients_role[session_id] == Role.DOCTOR:
                         logging.info(f"Doctor wants to save {player_id}")
-                        # if self.selected[Role.DOCTOR]: continue
                         self.selected[Role.DOCTOR] = True
                         self.saved_player = player_id
                         logging.info(f"Saved player save. Player id: {player_id}")
@@ -112,7 +111,6 @@ class Server:
                         )
                         logging.info(f"Inquiry result sent: {str(target_team)}")
                     elif self.clients_role[session_id] == Role.GODFATHER:
-                        # if self.selected[Role.GODFATHER]: continue
                         self.selected[Role.GODFATHER] = True
                         logging.info(f"Player {self.clients_id[session_id]} (Godfather) wants to kill player {player_id}")
                         self.killed_player = player_id
@@ -163,6 +161,8 @@ class Server:
                             self.roles[role] = session
                             self.clients_socket[session].send(str(int(role)).encode("ascii"))
                             break
+                    from collections import OrderedDict
+                    self.votes = OrderedDict(sorted(self.votes.items()))
                         
                         
             except ValueError:
