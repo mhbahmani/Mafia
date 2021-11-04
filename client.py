@@ -12,12 +12,12 @@ class Phase(IntEnum):
 
 
 class Role(IntEnum):
-    CITIZEN = 0
-    DOCTOR = 1
-    DETECTIVE = 2
-    MAFIA = 3
-    GODFATHER = 4
-    STORYTELLER = 5
+    CITIZEN = 1
+    DOCTOR = 2
+    DETECTIVE = 3
+    MAFIA = 4
+    GODFATHER = 5
+    STORYTELLER = 6
 
     def __str__(self) -> str:
         return super().__str__()
