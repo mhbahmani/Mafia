@@ -2,6 +2,7 @@ from enum import IntEnum
 from hashlib import sha256
 
 import socket, threading
+import logging
 import json
 import re
 
@@ -53,7 +54,7 @@ class Server:
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.bind((Server.HOST, Server.PORT))
         self.server.listen(1)
-        print(f"Server is listening on {Server.HOST}:{Server.PORT}")
+        logging.info(f"Server is listening on {Server.HOST}:{Server.PORT}")
 
         self.clients_socket = {}
         self.clients_role = {}
@@ -86,17 +87,19 @@ class Server:
                     msg = f"Player {self.clients_id[session_id]} offers to kill player {player_id}"
                     self.clients_socket[self.roles[Role.GODFATHER]].send(msg.encode("ascii"))
                     self.clients_socket[self.roles[Role.STORYTELLER]].send(msg.encode("ascii"))
-                    print(msg)
+                    logging.info(msg)
                 elif command.startswith("vote") and \
                     self.check_vote_conditions(session_id):
                     player_id = int(re.match("vote (?P<player_id>\d+)", command).groupdict().get("player_id"))
                     self.votes[player_id] += 1
                     self.voted[session_id] = True
-                    threading.Thread(target=self.send_to_all, args=(json.dumps(self.votes),)).start()
-                    print(f"Player {self.clients_id[session_id]} voted to {player_id}")
+                    msg = f"Player {self.clients_id[session_id]} voted to {player_id}"
+                    threading.Thread(target=self.send_to_all, args=(f"{msg}\n{json.dumps(self.votes)}",)).start()
+                    logging.info(f"Player {self.clients_id[session_id]} voted to {player_id}")
                 elif command == "next step" and \
                     self.check_next_step_conditions(session_id):
                     threading.Thread(target=self.next_phase, args=()).start()
+                    logging.info(f"Going to Next Phase: {str(self.phase)}")
                 elif command == "set roles" and \
                     self.check_set_roles_conditions():
                     self.roles[Role.STORYTELLER] = session_id
@@ -112,8 +115,8 @@ class Server:
                             break
                         
                         
-            except:
-                print("Something bad happend")
+            except ValueError:
+                logging.error("Something bad happend")
                 # client.close()
                 # self.clients_socket.pop(session_id)
                 # self.clients_role.pop(session_id)
@@ -125,7 +128,7 @@ class Server:
         while True:
             client, address = self.server.accept()
             session_id = sha256(bytes(f"client{address}", "utf-8")).hexdigest()[-20:]
-            print(f"New player accepted with id {session_id}")
+            logging.info(f"New player accepted with id {session_id}")
             client.send(session_id.encode("ascii"))
             self.clients_socket[session_id] = client
             self.clients_id[session_id] = len(self.clients_socket)
@@ -175,4 +178,11 @@ class Server:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level={
+        'INFO': logging.INFO,
+        'DEBUG': logging.DEBUG,
+        'ERROR': logging.ERROR,
+        }['INFO'])
     server = Server()
