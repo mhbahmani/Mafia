@@ -34,27 +34,31 @@ class Team(IntEnum):
 class Server:
     server: socket.socket
     HOST = '127.0.0.1'
-    PORT = 8001
+    PORT = 8000
     phase: Phase = Phase.DAY
     saved_player = 0
     killed_player = 0
     doctor_saved_himself = False
     # Key: Role          Value: Selected or not
-    selected: dict
+    selected = {
+            Role.DOCTOR: False,
+            Role.DETECTIVE: False,
+            Role.GODFATHER: False
+        }
     # Key: Session_id    Value: Socket
-    clients_socket: dict
+    clients_socket = {}
     # Key: Session_id    Value: Role
-    clients_role: dict
+    clients_role = {}
     # Key: Session_id    Value: Id
-    clients_id: dict
+    clients_id = {}
     # Key: Id            Valeu: Votes
-    votes: dict
+    votes = {}
     # Key: Session_id    Valeu: Voted
-    voted: dict
+    voted = {}
     # Key: Role          Value: Session_id
-    roles: dict
+    roles = {}
     # Key: Id            Value: Session_id
-    ids: dict
+    ids = {}
 
 
     def __init__(self):
@@ -62,19 +66,6 @@ class Server:
         self.server.bind((Server.HOST, Server.PORT))
         self.server.listen(1)
         logging.info(f"Server is listening on {Server.HOST}:{Server.PORT}")
-
-        self.selected= {
-            Role.DOCTOR: False,
-            Role.DETECTIVE: False,
-            Role.GODFATHER: False
-        }
-        self.clients_socket = {}
-        self.clients_role = {}
-        self.clients_id = {}
-        self.roles = {}
-        self.votes = {}
-        self.voted = {}
-        self.ids = {}
 
         server_thread = threading.Thread(target=self.server_listener, args=())
         server_thread.start()
@@ -95,18 +86,25 @@ class Server:
                         exclude_roles=[self.clients_role[session_id]])
                     logging.info(msg)
                 elif command.startswith("select"):
-                    if self.selected[Role.DOCTOR]: continue
-                    self.selected[Role.DOCTOR] = True
                     player_id = int(re.match("select (?P<player_id>\d+)", command).groupdict().get("player_id"))
                     if self.clients_role[session_id] == Role.DOCTOR:
+                        if self.selected[Role.DOCTOR]: continue
+                        self.selected[Role.DOCTOR] = True
                         if player_id == self.clients_id[session_id]:
                             if self.doctor_saved_himself: continue
                             else: self.doctor_saved_himself = True
                         self.saved_player = player_id
                     elif self.clients_role[session_id] == Role.DETECTIVE:
-                        pass
+                        if self.selected[Role.DETECTIVE]: continue
+                        self.selected[Role.DETECTIVE] = True
+                        target_team = self.get_team(player_id=player_id)
+                        self.make_send_message_by_role_thread(
+                            message=f"Inquiry Result: Player {player_id} role is {str(target_team)}",
+                            recipients_role=[Role.STORYTELLER, Role.DETECTIVE]
+                        )
                     elif self.clients_role[session_id] == Role.GODFATHER:
-                        pass
+                        if self.selected[Role.GODFATHER]: continue
+                        self.selected[Role.GODFATHER] = True
                 elif command.startswith("offer") and \
                     self.check_offer_conditions(session_id):
                     player_id = re.match("offer (?P<player_id>\d+)", command).groupdict().get("player_id")
@@ -157,6 +155,7 @@ class Server:
             client.send(session_id.encode("ascii"))
             self.clients_socket[session_id] = client
             self.clients_id[session_id] = len(self.clients_socket)
+            self.ids[self.clients_id[session_id]] = session_id
             self.votes[self.clients_id[session_id]] = 0
             self.voted[session_id] = True
             thread = threading.Thread(target=self.handle_client, args=(client, session_id,))
@@ -220,6 +219,11 @@ class Server:
     def check_offer_conditions(self, session_id: str) -> bool:
         return self.phase == Phase.NIGHT and \
             self.clients_role.get(session_id) == Role.MAFIA
+
+
+    def get_team(self, role: Role=None, player_id: str= None) -> Team:
+        if player_id and not role: role = self.clients_role[self.ids[player_id]]
+        return Team.MAFIA if role in [Role.MAFIA, Role.GODFHATHER] else Team.CITIZEN
 
 
 if __name__ == "__main__":

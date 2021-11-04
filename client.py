@@ -30,7 +30,7 @@ class Team(IntEnum):
 
 
 class Socket:
-    SERVER_PORT = 8001
+    SERVER_PORT = 8000
     SERVER_HOST = '127.0.0.1'
     client: socket.socket
     lock: threading.Lock
