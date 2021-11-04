@@ -3,6 +3,7 @@ from hashlib import sha256
 
 import socket, threading
 import logging
+import random
 import json
 import re
 
@@ -17,7 +18,7 @@ class Phase(IntEnum):
 
 
 class Role(IntEnum):
-    # CITIZEN = 1
+    CITIZEN = 1
     DOCTOR = 2
     DETECTIVE = 3
     MAFIA = 4
@@ -48,6 +49,8 @@ class Server:
     # Key Session_id     Value: Socket
     killed_sockets = {}
     killed_roles = []
+    # Key: Id            Value: Session_id
+    killed_ids = {}
     # Key: Session_id    Value: Socket
     clients_socket = {}
     # Key: Session_id    Value: Role
@@ -122,6 +125,11 @@ class Server:
                 elif command.startswith("vote") and \
                     self.check_vote_conditions(session_id):
                     player_id = int(re.match("vote (?P<player_id>\d+)", command).groupdict().get("player_id"))
+                    logging.info(f"Player {self.clients_id[session_id]} vote to {player_id}")
+                    if player_id in self.killed_ids: 
+                        logging.info(f"Voted player by {self.clients_id[session_id]} is dead already")
+                        client.send(f"Player {player_id} is dead idiot :/")
+                        continue
                     self.votes[player_id] += 1
                     self.voted[session_id] = True
                     msg = f"Player {self.clients_id[session_id]} voted to {player_id}"
@@ -138,11 +146,20 @@ class Server:
                     self.roles[Role.STORYTELLER] = session_id
                     self.clients_role[session_id] = Role.STORYTELLER
                     self.clients_socket[session_id].send(str(int(Role.STORYTELLER)).encode("ascii"))
+                    self.clients_id[session_id] = len(Role)
+                    self.ids[self.clients_id[session_id]] = session_id
+
+                    ids = list(range(1, 6))
+                    random.shuffle(ids)
+                    i2 = 0
                     for role in Role:
                         if role == Role.STORYTELLER: continue
-                        for session in self.clients_socket:
-                            if self.clients_role.get(session) != None: continue
+                        for i, session in enumerate(self.clients_socket):
+                            if self.clients_role.get(session) != None: i2 = 1; continue
                             self.clients_role[session] = role
+                            self.clients_id[session] = ids[i - i2]
+                            self.ids[ids[i - i2]] = session
+                            self.votes[ids[i - i2]] = 0
                             self.roles[role] = session
                             self.clients_socket[session].send(str(int(role)).encode("ascii"))
                             break
@@ -164,9 +181,6 @@ class Server:
             logging.info(f"New player accepted with id {session_id}")
             client.send(session_id.encode("ascii"))
             self.clients_socket[session_id] = client
-            self.clients_id[session_id] = len(self.clients_socket)
-            self.ids[self.clients_id[session_id]] = session_id
-            self.votes[self.clients_id[session_id]] = 0
             thread = threading.Thread(target=self.handle_client, args=(client, session_id,))
             thread.start()
 
@@ -177,7 +191,10 @@ class Server:
         if len(selected_players) == 1:
             msg = f"Player {selected_players[0]} killed"
             logging.info(msg)
-            self.kill_player(killed_session_id=self.ids[selected_players[0]], message=msg)
+            self.kill_player(
+                killed_session_id=self.ids[selected_players[0]],
+                killed_player_id=selected_players[0],
+                message=msg)
 
 
     def make_send_message_by_role_thread(self, message: str, recipients_role: list = list(Role), exclude_roles: list = []):
@@ -226,6 +243,7 @@ class Server:
                 logging.info(f"The mobs killed player {self.killed_player}")
                 self.kill_player(
                     killed_session_id=self.ids[self.killed_player],
+                    killed_player_id=self.killed_player,
                     message=f"Player {self.killed_player} got killed last night")
 
         ## clear votes
@@ -261,17 +279,18 @@ class Server:
             self.clients_role.get(session_id) == Role.MAFIA
 
 
-    def kill_player(self, killed_session_id: str, message: str) -> None:
+    def kill_player(self, killed_session_id: str, killed_player_id: int, message: str) -> None:
         self.make_send_message_by_role_thread(message=message)
         self.killed_sockets[killed_session_id] = self.clients_socket[killed_session_id]
         self.killed_roles.append(self.clients_role[killed_session_id])
+        self.killed_ids[killed_player_id] = killed_session_id
         self.clients_socket.pop(killed_session_id)
         self.clients_role.pop(killed_session_id)
         self.clients_id.pop(killed_session_id)
 
 
     def get_team(self, role: Role=None, player_id: int= None) -> Team:
-        if not player_id in self.ids: return Team.DEAD
+        if player_id in self.killed_ids: return Team.DEAD
         if player_id and not role: role = self.clients_role[self.ids[player_id]]
         return Team.MAFIA if role == Role.MAFIA else Team.CITIZEN
 
