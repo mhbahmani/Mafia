@@ -85,8 +85,7 @@ class Server:
                     self.check_offer_conditions(session_id):
                     player_id = re.match("offer (?P<player_id>\d+)", command).groupdict().get("player_id")
                     msg = f"Player {self.clients_id[session_id]} offers to kill player {player_id}"
-                    self.clients_socket[self.roles[Role.GODFATHER]].send(msg.encode("ascii"))
-                    self.clients_socket[self.roles[Role.STORYTELLER]].send(msg.encode("ascii"))
+                    self.make_send_message_by_role_thread(msg, [Role.STORYTELLER, Role.GODFATHER])
                     logging.info(msg)
                 elif command.startswith("vote") and \
                     self.check_vote_conditions(session_id):
@@ -94,7 +93,7 @@ class Server:
                     self.votes[player_id] += 1
                     self.voted[session_id] = True
                     msg = f"Player {self.clients_id[session_id]} voted to {player_id}"
-                    threading.Thread(target=self.send_to_all, args=(f"{msg}\n{json.dumps(self.votes)}",)).start()
+                    self.make_send_message_by_role_thread(msg)
                     logging.info(f"Player {self.clients_id[session_id]} voted to {player_id}")
                 elif command == "next step" and \
                     self.check_next_step_conditions(session_id):
@@ -138,6 +137,18 @@ class Server:
             thread.start()
 
 
+    def make_send_message_by_role_thread(self, message: str, recipients_role: list = list(Role)):
+        """
+            If recipients_role not set, send to all 
+        """
+        threading.Thread(target=self.send_message_by_role, args=(message, recipients_role,)).start()
+
+
+    def send_message_by_role(self, message: str, recipients_role: list):
+        for role in recipients_role:
+            self.clients_socket[self.roles[role]].send(message.encode("ascii"))
+
+
     def send_to_all(self, message: str) -> None:
         for player in self.clients_socket:
             self.clients_socket[player].send(message.encode("ascii"))
@@ -145,7 +156,7 @@ class Server:
 
     def next_phase(self) -> None:
         self.phase = Phase((self.phase + 1) % 3)
-        threading.Thread(target=self.send_to_all, args=(f"Going to next phase: {str(self.phase)}",)).start()
+        self.make_send_message_by_role_thread(message=f"Going to next phase: {str(self.phase)}")
         self.clear_votes()
 
 
