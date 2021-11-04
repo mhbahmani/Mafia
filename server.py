@@ -18,9 +18,9 @@ class Phase(IntEnum):
 
 class Role(IntEnum):
     # CITIZEN = 0
-    # DOCTOR = 1
-    # DETECTIVE = 2
-    MAFIA = 3
+    DOCTOR = 1
+    DETECTIVE = 2
+    # MAFIA = 3
     GODFATHER = 4
     STORYTELLER = 5
 
@@ -34,8 +34,13 @@ class Team(IntEnum):
 class Server:
     server: socket.socket
     HOST = '127.0.0.1'
-    PORT = 8000
+    PORT = 8001
     phase: Phase = Phase.DAY
+    saved_player = 0
+    killed_player = 0
+    doctor_saved_himself = False
+    # Key: Role          Value: Selected or not
+    selected: dict
     # Key: Session_id    Value: Socket
     clients_socket: dict
     # Key: Session_id    Value: Role
@@ -48,6 +53,8 @@ class Server:
     voted: dict
     # Key: Role          Value: Session_id
     roles: dict
+    # Key: Id            Value: Session_id
+    ids: dict
 
 
     def __init__(self):
@@ -56,12 +63,18 @@ class Server:
         self.server.listen(1)
         logging.info(f"Server is listening on {Server.HOST}:{Server.PORT}")
 
+        self.selected= {
+            Role.DOCTOR: False,
+            Role.DETECTIVE: False,
+            Role.GODFATHER: False
+        }
         self.clients_socket = {}
         self.clients_role = {}
         self.clients_id = {}
         self.roles = {}
         self.votes = {}
         self.voted = {}
+        self.ids = {}
 
         server_thread = threading.Thread(target=self.server_listener, args=())
         server_thread.start()
@@ -82,7 +95,18 @@ class Server:
                         exclude_roles=[self.clients_role[session_id]])
                     logging.info(msg)
                 elif command.startswith("select"):
-                    player_id = re.match("select (?P<player_id>\d+)", command).groupdict().values()
+                    if self.selected[Role.DOCTOR]: continue
+                    self.selected[Role.DOCTOR] = True
+                    player_id = int(re.match("select (?P<player_id>\d+)", command).groupdict().get("player_id"))
+                    if self.clients_role[session_id] == Role.DOCTOR:
+                        if player_id == self.clients_id[session_id]:
+                            if self.doctor_saved_himself: continue
+                            else: self.doctor_saved_himself = True
+                        self.saved_player = player_id
+                    elif self.clients_role[session_id] == Role.DETECTIVE:
+                        pass
+                    elif self.clients_role[session_id] == Role.GODFATHER:
+                        pass
                 elif command.startswith("offer") and \
                     self.check_offer_conditions(session_id):
                     player_id = re.match("offer (?P<player_id>\d+)", command).groupdict().get("player_id")
@@ -165,14 +189,16 @@ class Server:
     def next_phase(self) -> None:
         self.phase = Phase((self.phase + 1) % 3)
         self.make_send_message_by_role_thread(message=f"Going to next phase: {str(self.phase)}")
-        self.clear_votes()
-
-
-    def clear_votes(self) -> None:
+        ## clear votes
         for player_id in self.votes:
             self.votes[player_id] = 0
         for session_id in self.voted:
             self.voted[session_id] = False
+        # clear selected
+        for role in self.selected:
+            self.selected[role] = False
+        self.saved_player = 0
+        self.killed_player = 0
 
 
     def check_vote_conditions(self, session_id: str) -> bool:
@@ -183,7 +209,7 @@ class Server:
     def check_set_roles_conditions(self) -> bool:
         return self.phase == Phase.DAY and \
             not self.roles.get(Role.STORYTELLER) and \
-            len(self.clients_socket) == 3
+            len(self.clients_socket) == len(Role)
 
     def check_next_step_conditions(self, session_id: str) -> bool:
         return self.clients_role.get(session_id) == Role.STORYTELLER
