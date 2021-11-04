@@ -225,7 +225,7 @@ class Server:
         self.phase = Phase((self.phase + 1) % 3)
         msg = ""
         if self.phase == Phase.NIGHT: msg = "* Sleeeeeeep! *"
-        elif self.phase == Phase.DAY: msg = "* ome to wake! *"
+        elif self.phase == Phase.DAY: msg = "* Time to wake! *"
         elif self.phase == Phase.VOTE: msg = "* Mizan Ray Mellat Ast! *"
         self.make_send_message_by_role_thread(message=f"Going to next phase: {str(self.phase)}\n{msg}")
         logging.info(f"Going to Next Phase: {str(self.phase)}")
