@@ -241,7 +241,7 @@ class Server:
                 self.kill_player(
                     killed_session_id=self.ids[self.killed_player],
                     killed_player_id=self.killed_player,
-                    message=f"Player {self.killed_player} got killed last night")
+                    message=f"Player {self.killed_player} from {self.get_team(self.killed_player)} team got killed last night")
 
         logging.info(f"Going to Next Phase: {str(self.phase)}")
 
