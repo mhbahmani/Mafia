@@ -88,20 +88,25 @@ class Server:
                 elif command.startswith("select"):
                     player_id = int(re.match("select (?P<player_id>\d+)", command).groupdict().get("player_id"))
                     if self.clients_role[session_id] == Role.DOCTOR:
+                        logging.info(f"Doctor wants to save {player_id}")
                         if self.selected[Role.DOCTOR]: continue
                         self.selected[Role.DOCTOR] = True
                         if player_id == self.clients_id[session_id]:
                             if self.doctor_saved_himself: continue
                             else: self.doctor_saved_himself = True
+                            logging.info("Doctor saved himself")
                         self.saved_player = player_id
+                        logging.info(f"Saved player save. Player id: {player_id}")
                     elif self.clients_role[session_id] == Role.DETECTIVE:
                         if self.selected[Role.DETECTIVE]: continue
                         self.selected[Role.DETECTIVE] = True
+                        logging.info(f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team")
                         target_team = self.get_team(player_id=player_id)
                         self.make_send_message_by_role_thread(
                             message=f"Inquiry Result: Player {player_id} role is {str(target_team)}",
                             recipients_role=[Role.STORYTELLER, Role.DETECTIVE]
                         )
+                        logging.info(f"Inquiry result sent: {str(target_team)}")
                     elif self.clients_role[session_id] == Role.GODFATHER:
                         if self.selected[Role.GODFATHER]: continue
                         self.selected[Role.GODFATHER] = True
