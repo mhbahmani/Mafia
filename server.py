@@ -87,17 +87,18 @@ class Server:
     def handle_client(self, client: socket.socket, session_id: str):
         while not self.end:
             try:
+                if session_id in self.killed_sockets: continue
                 message = client.recv(BUFF_SIZE).decode("ascii")
                 regex_result = re.match("(?P<session_id>[\w|=]+)::(?P<command>.+)", message)
                 session_id, command = regex_result.groupdict().values()
-                if session_id in self.killed_sockets:
-                    continue
                 if command.startswith("say") and \
                     self.check_say_conditions():
                     message = re.match("say (?P<message>.+)", command).groupdict().get("message")
                     msg = f"{self.clients_id[session_id]}: {message}"
+                    s_msg = f"{self.clients_id[session_id]} ({self.clients_role[session]}): {message}"
                     self.make_send_message_by_role_thread(
-                        message=f"{self.clients_id[session_id]}: {message}",
+                        message=msg,
+                        souls_message=s_msg,
                         exclude_roles=[self.clients_role[session_id]])
                     logging.info(msg)
                 elif command.startswith("select"):
@@ -112,8 +113,10 @@ class Server:
                         self.selected[Role.DETECTIVE] = True
                         logging.info(f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team")
                         target_team = self.get_team(player_id=player_id)
+                        s_msg = f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team\nInquiry Result: Player {player_id} role is {str(target_team)}"
                         self.make_send_message_by_role_thread(
                             message=f"Inquiry Result: Player {player_id} role is {str(target_team)}",
+                            souls_message=s_msg,
                             recipients_role=[Role.STORYTELLER, Role.DETECTIVE]
                         )
                         logging.info(f"Inquiry result sent: {str(target_team)}")
@@ -125,7 +128,7 @@ class Server:
                     self.check_offer_conditions(session_id):
                     player_id = re.match("offer (?P<player_id>\d+)", command).groupdict().get("player_id")
                     msg = f"Player {self.clients_id[session_id]} offers to kill player {player_id}"
-                    self.make_send_message_by_role_thread(msg, [Role.STORYTELLER, Role.GODFATHER])
+                    self.make_send_message_by_role_thread(msg, msg, [Role.STORYTELLER, Role.GODFATHER])
                     logging.info(msg)
                 elif command.startswith("vote") and \
                     self.check_vote_conditions(session_id):
@@ -136,8 +139,8 @@ class Server:
                         continue
                     self.votes[player_id] += 1
                     self.voted[session_id] = True
-                    msg = f"Player {self.clients_id[session_id]} voted to {player_id}"
-                    self.make_send_message_by_role_thread(f"{msg} --> {json.dumps(self.votes)}")
+                    msg = f"Player {self.clients_id[session_id]} voted to {player_id} --> {json.dumps(self.votes)}"
+                    self.make_send_message_by_role_thread(msg, msg)
                     logging.info(f"Player {self.clients_id[session_id]} voted to {player_id}")
                 elif command == "next step" and \
                     self.check_next_step_conditions(session_id):
@@ -195,17 +198,24 @@ class Server:
         selected_players = [k for k, v in self.votes.items() if v == max(self.votes.values())]
         if len(selected_players) > 1: return
         if len(selected_players) == 1:
-            msg = f"Player {selected_players[0]} killed"
+            msg = f"Player {selected_players[0]} got killed"
+            s_msg = f"Player {selected_players[0]} ({self.clients_role.get(self.ids[selected_players[0]], 'Unknown')}) got killed"
             logging.info(msg)
             self.kill_player(
                 killed_session_id=self.ids[selected_players[0]],
                 killed_player_id=selected_players[0],
-                message=msg)
+                message=msg,
+                souls_message=s_msg)
 
 
     def send_message_by_role(self, message: str, recipients_role: list):
         for role in recipients_role:
             self.clients_socket.get(self.roles[role], self.killed_sockets.get(self.roles[role])).send(message.encode("ascii"))
+
+
+    def send_message_to_souls(self, message: str):
+        for soul in self.killed_sockets.values():
+            soul.send(message.encode("ascii"))
 
 
     def send_to_all(self, message: str) -> None:
@@ -235,7 +245,8 @@ class Server:
             # Handle doctor saved and assassinated player
             if self.saved_player == self.killed_player:
                 logging.info(f"Doctor saved assassinated player (Player {self.saved_player})")
-                self.make_send_message_by_role_thread("No one died last night")
+                msg = "No one died last night"
+                self.make_send_message_by_role_thread(msg, msg)
             else:
                 logging.info(f"The mobs killed player {self.killed_player}")
                 self.kill_player(
@@ -249,7 +260,8 @@ class Server:
         if self.phase == Phase.NIGHT: msg = "* Sleeeeeeep! *"
         elif self.phase == Phase.DAY: msg = "* Time to wake! *"
         elif self.phase == Phase.VOTE: msg = "* Mizan Ray Mellat Ast! *"
-        self.make_send_message_by_role_thread(message=f"Going to next phase: {str(self.phase)}\n{msg}")
+        msg = f"Going to next phase: {str(self.phase)}\n{msg}"
+        self.make_send_message_by_role_thread(msg, msg)
 
         if self.winner:
             self.end_game()
@@ -300,7 +312,8 @@ class Server:
             self.clients_role.get(session_id) == Role.MAFIA
 
 
-    def kill_player(self, killed_session_id: str, killed_player_id: int, message: str) -> None:
+    def kill_player(self, killed_session_id: str, killed_player_id: int, message: str, souls_message: str=None) -> None:
+        if not souls_message: souls_message = message
         self.killed_sockets[killed_session_id] = self.clients_socket[killed_session_id]
         self.killed_roles.append(self.clients_role[killed_session_id])
         self.killed_ids[killed_player_id] = killed_session_id
@@ -308,7 +321,7 @@ class Server:
         self.clients_socket.pop(killed_session_id)
         self.clients_role.pop(killed_session_id)
         self.clients_id.pop(killed_session_id)
-        self.make_send_message_by_role_thread(message=message)
+        self.make_send_message_by_role_thread(message=message, souls_message=souls_message)
         self.make_check_winner_thread()
 
 
@@ -341,7 +354,7 @@ class Server:
         self.end = True
 
 
-    def make_send_message_by_role_thread(self, message: str, recipients_role: list = list(Role), exclude_roles: list = [], team: Team = None):
+    def make_send_message_by_role_thread(self, message: str, souls_message: str = None, recipients_role: list = list(Role), exclude_roles: list = [], team: Team = None):
         """
             If recipients_role not set, send to all 
         """
@@ -361,6 +374,11 @@ class Server:
                     list(set(recipients_role) - set(exclude_roles) - set(self.killed_roles)),
                 )
             ).start()
+            if souls_message:
+                threading.Thread(
+                    target=self.send_message_to_souls,
+                    args=(souls_message, )
+                )
 
 
     def make_check_winner_thread(self):
