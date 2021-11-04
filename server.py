@@ -89,12 +89,8 @@ class Server:
                     player_id = int(re.match("select (?P<player_id>\d+)", command).groupdict().get("player_id"))
                     if self.clients_role[session_id] == Role.DOCTOR:
                         logging.info(f"Doctor wants to save {player_id}")
-                        if self.selected[Role.DOCTOR]: continue
+                        # if self.selected[Role.DOCTOR]: continue
                         self.selected[Role.DOCTOR] = True
-                        if player_id == self.clients_id[session_id]:
-                            if self.doctor_saved_himself: continue
-                            else: self.doctor_saved_himself = True
-                            logging.info("Doctor saved himself")
                         self.saved_player = player_id
                         logging.info(f"Saved player save. Player id: {player_id}")
                     elif self.clients_role[session_id] == Role.DETECTIVE:
@@ -108,8 +104,10 @@ class Server:
                         )
                         logging.info(f"Inquiry result sent: {str(target_team)}")
                     elif self.clients_role[session_id] == Role.GODFATHER:
-                        if self.selected[Role.GODFATHER]: continue
+                        # if self.selected[Role.GODFATHER]: continue
                         self.selected[Role.GODFATHER] = True
+                        logging.info(f"Player {self.clients_id[session_id]} (Godfather) wants to kill player {player_id}")
+                        self.killed_player = player_id
                 elif command.startswith("offer") and \
                     self.check_offer_conditions(session_id):
                     player_id = re.match("offer (?P<player_id>\d+)", command).groupdict().get("player_id")
@@ -203,6 +201,12 @@ class Server:
             self.selected[role] = False
         self.saved_player = 0
         self.killed_player = 0
+
+        # TODO:
+        # Handle doctor save himeslef
+        if player_id == self.clients_id[session_id]:
+            if self.doctor_saved_himself: continue
+            else: self.doctor_saved_himself = True
 
 
     def check_vote_conditions(self, session_id: str) -> bool:
