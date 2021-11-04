@@ -87,7 +87,7 @@ class Server:
     def handle_client(self, client: socket.socket, session_id: str):
         while not self.end:
             try:
-                # if session_id in self.killed_sockets: continue
+                if session_id in self.killed_sockets: continue
                 message = client.recv(BUFF_SIZE).decode("ascii")
                 regex_result = re.match("(?P<session_id>[\w|=]+)::(?P<command>.+)", message)
                 session_id, command = regex_result.groupdict().values()
