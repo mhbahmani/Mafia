@@ -94,81 +94,24 @@ class Server:
                 if command.startswith("say") and \
                     self.check_say_conditions():
                     message = re.match("say (?P<message>.+)", command).groupdict().get("message")
-                    msg = f"{self.clients_id[session_id]}: {message}"
-                    s_msg = f"{self.clients_id[session_id]} ({str(str(self.clients_role[session_id]))}): {message}"
-                    self.make_send_message_by_role_thread(
-                        message=msg,
-                        souls_message=s_msg,
-                        exclude_roles=[self.clients_role[session_id]])
-                    logging.info(msg)
+                    self.handle_say_command(session_id, message)
                 elif command.startswith("select"):
                     player_id = int(re.match("select (?P<player_id>\d+)", command).groupdict().get("player_id"))
-                    if self.clients_role[session_id] == Role.DOCTOR:
-                        logging.info(f"Doctor wants to save {player_id}")
-                        self.selected[Role.DOCTOR] = True
-                        self.saved_player = player_id
-                        logging.info(f"Saved player save. Player id: {player_id}")
-                    elif self.clients_role[session_id] == Role.DETECTIVE:
-                        if self.selected[Role.DETECTIVE]: continue
-                        self.selected[Role.DETECTIVE] = True
-                        logging.info(f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team")
-                        target_team = self.get_team(player_id=player_id)
-                        s_msg = f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team\nInquiry Result: Player {player_id} role is {str(target_team)}"
-                        self.make_send_message_by_role_thread(
-                            message=f"Inquiry Result: Player {player_id} role is {str(target_team)}",
-                            souls_message=s_msg,
-                            recipients_role=[Role.STORYTELLER, Role.DETECTIVE]
-                        )
-                        logging.info(f"Inquiry result sent: {str(target_team)}")
-                    elif self.clients_role[session_id] == Role.GODFATHER:
-                        self.selected[Role.GODFATHER] = True
-                        logging.info(f"Player {self.clients_id[session_id]} (Godfather) wants to kill player {player_id}")
-                        self.killed_player = player_id
+                    self.handle_select_command(session_id, player_id)
                 elif command.startswith("offer") and \
                     self.check_offer_conditions(session_id):
                     player_id = re.match("offer (?P<player_id>\d+)", command).groupdict().get("player_id")
-                    msg = f"Player {self.clients_id[session_id]} offers to kill player {player_id}"
-                    self.make_send_message_by_role_thread(msg, msg, [Role.STORYTELLER, Role.GODFATHER])
-                    logging.info(msg)
+                    self.handle_offer_command(session_id, player_id)
                 elif command.startswith("vote") and \
                     self.check_vote_conditions(session_id):
                     player_id = int(re.match("vote (?P<player_id>\d+)", command).groupdict().get("player_id"))
-                    if player_id in self.killed_ids: 
-                        logging.info(f"Voted player by {self.clients_id[session_id]} is dead already")
-                        client.send(f"Player {player_id} is dead idiot :/")
-                        continue
-                    self.votes[player_id] += 1
-                    self.voted[session_id] = True
-                    msg = f"Player {self.clients_id[session_id]} voted to {player_id} --> {json.dumps(self.votes)}"
-                    self.make_send_message_by_role_thread(msg, msg)
-                    logging.info(f"Player {self.clients_id[session_id]} voted to {player_id}")
+                    self.handle_vote_command(session_id, player_id, client)
                 elif command == "next step" and \
                     self.check_next_step_conditions(session_id):
-                    threading.Thread(target=self.next_phase, args=()).start()
+                    self.handle_next_step_command()
                 elif command == "set roles" and \
                     self.check_set_roles_conditions():
-                    self.roles[Role.STORYTELLER] = session_id
-                    self.clients_role[session_id] = Role.STORYTELLER
-                    self.clients_socket[session_id].send(str(int(Role.STORYTELLER)).encode("ascii"))
-                    self.clients_id[session_id] = len(Role)
-                    self.ids[self.clients_id[session_id]] = session_id
-
-                    ids = list(range(1, 6))
-                    random.shuffle(ids)
-                    i2 = 0
-                    for role in Role:
-                        if role == Role.STORYTELLER: continue
-                        for i, session in enumerate(self.clients_socket):
-                            if self.clients_role.get(session) != None: i2 = 1; continue
-                            self.clients_role[session] = role
-                            self.clients_id[session] = ids[i - i2]
-                            self.ids[ids[i - i2]] = session
-                            self.votes[ids[i - i2]] = 0
-                            self.roles[role] = session
-                            self.clients_socket[session].send(str(int(role)).encode("ascii"))
-                            break
-                    from collections import OrderedDict
-                    self.votes = OrderedDict(sorted(self.votes.items()))
+                    self.handle_set_roles_command(session_id)
 
             except AttributeError:
                 pass
@@ -176,6 +119,87 @@ class Server:
                 logging.error("Something bad happend")
                 client.close()
                 break
+
+
+    def handle_offer_command(self, session_id: str, player_id: int):
+        msg = f"Player {self.clients_id[session_id]} offers to kill player {player_id}"
+        self.make_send_message_by_role_thread(msg, msg, [Role.STORYTELLER, Role.GODFATHER])
+        logging.info(msg)
+
+
+    def handle_say_command(self, session_id: str, message: str) -> None:
+        msg = f"{self.clients_id[session_id]}: {message}"
+        s_msg = f"{self.clients_id[session_id]} ({str(str(self.clients_role[session_id]))}): {message}"
+        self.make_send_message_by_role_thread(
+            message=msg,
+            souls_message=s_msg,
+            exclude_roles=[self.clients_role[session_id]])
+        logging.info(msg)
+
+    
+    def handle_select_command(self, session_id: str, player_id: int) -> None:
+        if self.clients_role[session_id] == Role.DOCTOR:
+            logging.info(f"Doctor wants to save {player_id}")
+            self.selected[Role.DOCTOR] = True
+            self.saved_player = player_id
+            logging.info(f"Saved player save. Player id: {player_id}")
+        elif self.clients_role[session_id] == Role.DETECTIVE:
+            if self.selected[Role.DETECTIVE]: return
+            self.selected[Role.DETECTIVE] = True
+            logging.info(f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team")
+            target_team = self.get_team(player_id=player_id)
+            s_msg = f"Player {self.clients_id[session_id]} (Detective) asks player {player_id} team\nInquiry Result: Player {player_id} role is {str(target_team)}"
+            self.make_send_message_by_role_thread(
+                message=f"Inquiry Result: Player {player_id} role is {str(target_team)}",
+                souls_message=s_msg,
+                recipients_role=[Role.STORYTELLER, Role.DETECTIVE]
+            )
+            logging.info(f"Inquiry result sent: {str(target_team)}")
+        elif self.clients_role[session_id] == Role.GODFATHER:
+            self.selected[Role.GODFATHER] = True
+            logging.info(f"Player {self.clients_id[session_id]} (Godfather) wants to kill player {player_id}")
+            self.killed_player = player_id
+
+    
+    def handle_vote_command(self, session_id: str, player_id: int, client: socket.socket) -> None:
+        if player_id in self.killed_ids: 
+            logging.info(f"Voted player by {self.clients_id[session_id]} is dead already")
+            client.send(f"Player {player_id} is dead idiot :/")
+            return
+        self.votes[player_id] += 1
+        self.voted[session_id] = True
+        msg = f"Player {self.clients_id[session_id]} voted to {player_id} --> {json.dumps(self.votes)}"
+        self.make_send_message_by_role_thread(msg, msg)
+        logging.info(f"Player {self.clients_id[session_id]} voted to {player_id}")
+
+
+    def handle_set_roles_command(self, session_id: str) -> None:
+        self.roles[Role.STORYTELLER] = session_id
+        self.clients_role[session_id] = Role.STORYTELLER
+        self.clients_socket[session_id].send(str(int(Role.STORYTELLER)).encode("ascii"))
+        self.clients_id[session_id] = len(Role)
+        self.ids[self.clients_id[session_id]] = session_id
+
+        ids = list(range(1, 6))
+        random.shuffle(ids)
+        i2 = 0
+        for role in Role:
+            if role == Role.STORYTELLER: continue
+            for i, session in enumerate(self.clients_socket):
+                if self.clients_role.get(session) != None: i2 = 1; continue
+                self.clients_role[session] = role
+                self.clients_id[session] = ids[i - i2]
+                self.ids[ids[i - i2]] = session
+                self.votes[ids[i - i2]] = 0
+                self.roles[role] = session
+                self.clients_socket[session].send(str(int(role)).encode("ascii"))
+                break
+        from collections import OrderedDict
+        self.votes = OrderedDict(sorted(self.votes.items()))
+
+                
+    def handle_next_step_command(self):
+        threading.Thread(target=self.next_phase, args=()).start()
 
 
     def server_listener(self):
