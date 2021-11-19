@@ -21,7 +21,8 @@ class Phase(IntEnum):
 
 
 class Role(IntEnum):
-    CITIZEN = 1
+    CITIZEN = 0
+    CITIZEN2 = 1
     DOCTOR = 2
     DETECTIVE = 3
     MAFIA = 4
@@ -37,7 +38,7 @@ class Team(IntEnum):
 
 TeamPlayers = {
     Team.MAFIA: [Role.MAFIA, Role.GODFATHER],
-    Team.CITIZEN: [Role.CITIZEN, Role.DOCTOR, Role.DETECTIVE]
+    Team.CITIZEN: [Role.CITIZEN, Role.CITIZEN2, Role.DOCTOR, Role.DETECTIVE]
 }
 
 class Server:
@@ -190,11 +191,12 @@ class Server:
         self.clients_id[session_id] = len(Role)
         self.ids[self.clients_id[session_id]] = session_id
 
-        ids = list(range(1, 6))
+        ids = list(range(1, 7))
         random.shuffle(ids)
         i2 = 0
         for role in Role:
             if role == Role.STORYTELLER: continue
+            print(role)
             for i, session in enumerate(self.clients_socket):
                 if self.clients_role.get(session) != None: i2 = 1; continue
                 self.clients_role[session] = role

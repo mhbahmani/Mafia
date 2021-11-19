@@ -13,7 +13,8 @@ class Phase(IntEnum):
 
 
 class Role(IntEnum):
-    CITIZEN = 1
+    CITIZEN = 0
+    CITIZEN2 = 1
     DOCTOR = 2
     DETECTIVE = 3
     MAFIA = 4
